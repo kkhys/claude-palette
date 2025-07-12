@@ -1,68 +1,35 @@
 /**
- * Claude Palette - レンダラープロセス
+ * Claude Palette - レンダラープロセス（ブラウザ互換版）
  * 
  * @description UIの動作とメインプロセスとの通信を管理
  */
 
-import { ipcRenderer } from 'electron';
+// Electronのレンダラープロセスでrequireを使用
+const { ipcRenderer } = require('electron');
 
 /**
- * Claude Code Slash Command の定義
+ * Claude Code Slash Commands（動的に取得される）
  */
-interface SlashCommand {
-  /** コマンドの値（例: "/ask"） */
-  value: string;
-  /** 表示用ラベル */
-  label: string;
-  /** コマンドの説明 */
-  description: string;
-}
-
-/**
- * コマンド実行結果
- */
-interface CommandResult {
-  /** 実行成功フラグ */
-  success: boolean;
-  /** 成功時の出力 */
-  output?: string;
-  /** エラー時のメッセージ */
-  error?: string;
-}
-
-
-/**
- * ステータス表示の種類
- */
-type StatusType = 'success' | 'error' | 'loading';
+let SLASH_COMMANDS = [];
 
 /**
  * Claude Paletteレンダラークラス
  */
 class ClaudePaletteRenderer {
-    private commandSelect: HTMLSelectElement;
-    private inputText: HTMLTextAreaElement;
-    private executeBtn: HTMLButtonElement;
-    private closeBtn: HTMLButtonElement;
-    private status: HTMLElement;
-    private availableCommands: SlashCommand[] = [];
-
     constructor() {
         // DOM要素を取得（型チェック付き）
-        this.commandSelect = this.getElementByIdStrict<HTMLSelectElement>('command-select');
-        this.inputText = this.getElementByIdStrict<HTMLTextAreaElement>('input-text');
-        this.executeBtn = this.getElementByIdStrict<HTMLButtonElement>('execute-btn');
-        this.closeBtn = this.getElementByIdStrict<HTMLButtonElement>('close-btn');
-        this.status = this.getElementByIdStrict<HTMLElement>('status');
-        
-        this.initialize();
+        this.commandSelect = this.getElementByIdStrict('command-select');
+        this.inputText = this.getElementByIdStrict('input-text');
+        this.executeBtn = this.getElementByIdStrict('execute-btn');
+        this.closeBtn = this.getElementByIdStrict('close-btn');
+        this.status = this.getElementByIdStrict('status');
     }
 
     /**
      * 型安全なgetElementById
      */
-    private getElementByIdStrict<T extends HTMLElement>(id: string): T {
-        const element = document.getElementById(id) as T | null;
+    getElementByIdStrict(id) {
+        const element = document.getElementById(id);
         if (!element) {
             throw new Error(`Element with id '${id}' not found`);
         }
@@ -72,61 +39,57 @@ class ClaudePaletteRenderer {
     /**
      * レンダラープロセスを初期化
      */
-    private async initialize(): Promise<void> {
-        await this.loadCommands();
+    async initialize() {
+        console.log('Initializing Claude Palette Renderer...');
+        await this.loadClaudeCommands();
         this.populateCommands();
         this.setupEventListeners();
         this.focusInput();
+        console.log('Claude Palette Renderer initialized successfully');
     }
 
     /**
-     * メインプロセスからコマンド一覧を取得
+     * Claude Codeからslash commandを動的に取得
      */
-    private async loadCommands(): Promise<void> {
+    async loadClaudeCommands() {
         try {
-            this.showStatus('loading', 'コマンドを読み込み中...');
-            this.availableCommands = await ipcRenderer.invoke('get-claude-commands');
-            console.log(`Loaded ${this.availableCommands.length} commands`);
-            this.status.style.display = 'none';
+            console.log('Loading Claude commands...');
+            SLASH_COMMANDS = await ipcRenderer.invoke('get-claude-commands');
+            console.log(`Loaded ${SLASH_COMMANDS.length} Claude commands:`, SLASH_COMMANDS);
         } catch (error) {
-            console.error('Failed to load commands:', error);
-            this.showStatus('error', 'コマンドの読み込みに失敗しました');
-            // フォールバック: 空の配列
-            this.availableCommands = [];
+            console.error('Failed to load Claude commands:', error);
+            // フォールバック用のデフォルトcommand
+            SLASH_COMMANDS = [
+                { value: '/ask', label: '/ask - Claude に質問する', description: 'Claude AI に質問を送信' },
+                { value: '/chat', label: '/chat - チャットを開始', description: 'インタラクティブなチャットセッションを開始' }
+            ];
         }
     }
 
     /**
      * コマンドセレクトボックスにオプションを追加
      */
-    private populateCommands(): void {
-        // 既存のオプションをクリア
-        this.commandSelect.innerHTML = '';
-        
-        // デフォルトオプションを追加
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = 'コマンドを選択...';
-        defaultOption.disabled = true;
-        defaultOption.selected = true;
-        this.commandSelect.appendChild(defaultOption);
-
-        // 利用可能なコマンドを追加
-        this.availableCommands.forEach((command: SlashCommand) => {
+    populateCommands() {
+        console.log('Populating commands...');
+        SLASH_COMMANDS.forEach((command) => {
             const option = document.createElement('option');
             option.value = command.value;
             option.textContent = command.label;
             option.title = command.description;
             this.commandSelect.appendChild(option);
         });
+        console.log(`Added ${SLASH_COMMANDS.length} commands to select box`);
     }
 
     /**
      * イベントリスナーを設定
      */
-    private setupEventListeners(): void {
+    setupEventListeners() {
+        console.log('Setting up event listeners...');
+        
         // コマンド選択時
         this.commandSelect.addEventListener('change', () => {
+            console.log('Command selected:', this.commandSelect.value);
             this.updateExecuteButton();
         });
 
@@ -136,7 +99,7 @@ class ClaudePaletteRenderer {
         });
 
         // Enterキー（Cmd+Enter）で実行
-        this.inputText.addEventListener('keydown', (e: KeyboardEvent) => {
+        this.inputText.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
                 if (!this.executeBtn.disabled) {
@@ -156,27 +119,34 @@ class ClaudePaletteRenderer {
         });
 
         // ESCキーで閉じる
-        document.addEventListener('keydown', (e: KeyboardEvent) => {
+        document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.closeWindow();
             }
         });
+        
+        console.log('Event listeners set up successfully');
     }
 
     /**
      * 実行ボタンの有効/無効を更新
      */
-    private updateExecuteButton(): void {
+    updateExecuteButton() {
         const hasCommand = this.commandSelect.value.trim() !== '';
         const hasInput = this.inputText.value.trim() !== '';
         
         this.executeBtn.disabled = !hasCommand || !hasInput;
+        console.log('Execute button state:', {
+            hasCommand,
+            hasInput,
+            disabled: this.executeBtn.disabled
+        });
     }
 
     /**
      * 入力フィールドにフォーカス
      */
-    private focusInput(): void {
+    focusInput() {
         setTimeout(() => {
             this.inputText.focus();
         }, 100);
@@ -185,7 +155,7 @@ class ClaudePaletteRenderer {
     /**
      * コマンドを実行
      */
-    private async executeCommand(): Promise<void> {
+    async executeCommand() {
         const command = this.commandSelect.value;
         const input = this.inputText.value.trim();
 
@@ -198,7 +168,9 @@ class ClaudePaletteRenderer {
             this.executeBtn.disabled = true;
             this.showStatus('loading', 'コマンドを実行中...');
 
-            const result: CommandResult = await ipcRenderer.invoke('execute-claude-command', command, input);
+            console.log('Executing command:', { command, input });
+            const result = await ipcRenderer.invoke('execute-claude-command', command, input);
+            console.log('Command result:', result);
 
             if (result.success) {
                 this.showStatus('success', 'コマンドが正常に実行されました。');
@@ -210,6 +182,7 @@ class ClaudePaletteRenderer {
                 this.showStatus('error', `エラー: ${result.error ?? 'Unknown error'}`);
             }
         } catch (error) {
+            console.error('Execute command error:', error);
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.showStatus('error', `実行エラー: ${errorMessage}`);
         } finally {
@@ -224,7 +197,7 @@ class ClaudePaletteRenderer {
      * @param type - ステータスの種類
      * @param message - 表示するメッセージ
      */
-    private showStatus(type: StatusType, message: string): void {
+    showStatus(type, message) {
         this.status.className = `status ${type}`;
         
         if (type === 'loading') {
@@ -246,41 +219,87 @@ class ClaudePaletteRenderer {
     /**
      * ウィンドウを閉じる
      */
-    private async closeWindow(): Promise<void> {
-        await ipcRenderer.invoke('hide-window');
+    async closeWindow() {
+        try {
+            await ipcRenderer.invoke('hide-window');
+        } catch (error) {
+            console.error('Close window error:', error);
+        }
     }
 
     /**
      * フォームをリセット
      */
-    public async resetForm(): Promise<void> {
-        // コマンドを再読み込み（キャッシュが期限切れの場合に更新される）
-        await this.loadCommands();
-        this.populateCommands();
-        
+    resetForm() {
         this.commandSelect.value = '';
         this.inputText.value = '';
         this.status.style.display = 'none';
         this.updateExecuteButton();
         this.focusInput();
     }
+
+    /**
+     * Claude commandsを再読み込み（オプション機能）
+     */
+    async reloadCommands() {
+        try {
+            console.log('Reloading Claude commands...');
+            await this.loadClaudeCommands();
+            
+            // selectボックスをクリア
+            this.commandSelect.innerHTML = '<option value="">コマンドを選択...</option>';
+            
+            // 新しいコマンドを追加
+            this.populateCommands();
+            
+            console.log('Commands reloaded successfully');
+        } catch (error) {
+            console.error('Failed to reload commands:', error);
+        }
+    }
 }
 
 // グローバルスコープに追加（フォーカス時のリセット処理用）
-(window as any).claudePaletteRenderer = null;
+window.claudePaletteRenderer = null;
 
 // DOM読み込み完了後にアプリケーションを初期化
-document.addEventListener('DOMContentLoaded', () => {
-    const renderer = new ClaudePaletteRenderer();
-    (window as any).claudePaletteRenderer = renderer;
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM loaded, initializing renderer...');
+    
+    // DOM要素の存在確認
+    const commandSelect = document.getElementById('command-select');
+    const executeBtn = document.getElementById('execute-btn');
+    const closeBtn = document.getElementById('close-btn');
+    const inputText = document.getElementById('input-text');
+    
+    console.log('DOM elements found:', {
+        commandSelect: !!commandSelect,
+        executeBtn: !!executeBtn,
+        closeBtn: !!closeBtn,
+        inputText: !!inputText
+    });
+    
+    if (!commandSelect || !executeBtn || !closeBtn || !inputText) {
+        console.error('Missing required DOM elements!');
+        return;
+    }
+    
+    try {
+        const renderer = new ClaudePaletteRenderer();
+        await renderer.initialize();
+        window.claudePaletteRenderer = renderer;
+        console.log('Renderer initialized and attached to window');
+    } catch (error) {
+        console.error('Failed to initialize renderer:', error);
+    }
 });
 
 // ウィンドウが表示された時にフォームをリセット
 window.addEventListener('focus', () => {
     // 少し遅延してからリセット（ウィンドウのフォーカス処理を待つ）
-    setTimeout(async () => {
-        if ((window as any).claudePaletteRenderer) {
-            await (window as any).claudePaletteRenderer.resetForm();
+    setTimeout(() => {
+        if (window.claudePaletteRenderer) {
+            window.claudePaletteRenderer.resetForm();
         }
     }, 100);
 });

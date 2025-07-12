@@ -6,10 +6,14 @@
   "scripts": {
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
-    "build": "tsc && cp src/renderer.html dist/",
-    "watch": "tsc --watch",
+    "start:test": "npm run build && CLAUDE_PALETTE_TEST_MODE=true electron .",
+    "start:prod": "npm run build && CLAUDE_PALETTE_TEST_MODE=false electron .",
+    "dev:test": "npm run build && CLAUDE_PALETTE_TEST_MODE=true electron . --dev",
+    "dev:prod": "npm run build && CLAUDE_PALETTE_TEST_MODE=false electron . --dev",
+    "build": "./node_modules/.bin/tsc && cp src/renderer.html dist/ && cp src/renderer-browser.js dist/",
+    "watch": "npx tsc --watch",
     "dist": "npm run build && electron-builder --publish=never",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "npx tsc --noEmit"
   },
   "keywords": ["electron", "claude", "menubar", "productivity"],
   "author": "Your Name",
