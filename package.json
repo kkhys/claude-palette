@@ -1,0 +1,41 @@
+{
+  "name": "claude-palette",
+  "version": "1.0.0",
+  "description": "Claude Code slash commands launcher for macOS menu bar",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "build": "tsc && cp src/renderer.html dist/",
+    "watch": "tsc --watch",
+    "dist": "npm run build && electron-builder --publish=never",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["electron", "claude", "menubar", "productivity"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "build": {
+    "appId": "com.claude.palette",
+    "productName": "Claude Palette",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg"
+    }
+  }
+}
