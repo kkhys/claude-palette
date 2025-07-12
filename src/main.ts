@@ -32,6 +32,9 @@ class ClaudePalette {
       app.dock?.hide();
     }
 
+    // ハードウェアアクセラレーションを無効化（IMKエラー対策）
+    app.disableHardwareAcceleration();
+
     app.whenReady().then(() => {
       console.log('App is ready, creating tray...');
       this.createTray();
@@ -114,14 +117,14 @@ class ClaudePalette {
     try {
       // SVGからNativeImageを作成
       const icon = nativeImage.createFromBuffer(Buffer.from(svgIcon));
-      
+
       // macOSのテンプレートアイコンとして設定（ダークモード対応）
       icon.setTemplateImage(true);
-      
+
       return icon;
     } catch (error) {
       console.error('Failed to create SVG icon:', error);
-      
+
       // フォールバック: シンプルなドットアイコン
       const fallbackSvg = `
         <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg">
@@ -129,10 +132,10 @@ class ClaudePalette {
           <circle cx="8" cy="8" r="1.5" fill="white"/>
         </svg>
       `;
-      
+
       const fallbackIcon = nativeImage.createFromBuffer(Buffer.from(fallbackSvg));
       fallbackIcon.setTemplateImage(true);
-      
+
       return fallbackIcon;
     }
   }
@@ -152,7 +155,8 @@ class ClaudePalette {
       movable: false,
       webPreferences: {
         nodeIntegration: true,
-        contextIsolation: false
+        contextIsolation: false,
+        enableWebSQL: false // IMKエラー対策
       }
     });
 
@@ -248,13 +252,13 @@ class ClaudePalette {
     try {
       // ~/.claude/commands ディレクトリからコマンドを取得
       const commandsFromFiles = await this.getCommandsFromDirectory();
-      
+
       // ファイルベースのコマンドとフォールバックコマンドを結合
       const allCommands = [...commandsFromFiles, ...this.getFallbackCommands()];
-      
+
       // 重複を除去（ファイルベースのコマンドを優先）
       const uniqueCommands = this.removeDuplicateCommands(allCommands);
-      
+
       this.cacheCommands(uniqueCommands);
       return uniqueCommands;
     } catch (err) {
@@ -289,11 +293,11 @@ class ClaudePalette {
         // ファイル名がコマンド名となる（拡張子は除く）
         const commandName = path.parse(file).name;
         const filePath = path.join(commandsDir, file);
-        
+
         try {
           // ファイルの統計情報を取得
           const stats = fs.statSync(filePath);
-          
+
           // ディレクトリや非表示ファイルはスキップ
           if (stats.isDirectory() || file.startsWith('.')) {
             continue;
@@ -301,7 +305,7 @@ class ClaudePalette {
 
           // ファイルの最初の数行を読み取って説明を取得
           const description = await this.getCommandDescription(filePath);
-          
+
           const value = `/${commandName}`;
           commands.push({
             value,
@@ -332,22 +336,22 @@ class ClaudePalette {
     try {
       const content = fs.readFileSync(filePath, 'utf8');
       const lines = content.split('\n');
-      
+
       // コメント行から説明を抽出
       for (const line of lines.slice(0, 10)) { // 最初の10行のみチェック
         const trimmed = line.trim();
-        
+
         // bashスクリプトのコメント
         if (trimmed.startsWith('# ') && !trimmed.startsWith('#!/')) {
           return trimmed.substring(2).trim();
         }
-        
+
         // その他のコメント形式
         if (trimmed.startsWith('// ') || trimmed.startsWith('/* ')) {
           return trimmed.replace(/^(\/\/|\/\*)\s*/, '').replace(/\*\/$/, '').trim();
         }
       }
-      
+
       // コメントが見つからない場合はファイル名ベースの説明
       const commandName = path.parse(filePath).name;
       return `${commandName} コマンドを実行`;
@@ -421,9 +425,9 @@ class ClaudePalette {
         // 実際のClaude Codeコマンドを実行
         // 環境変数でテストモードを制御（デフォルトはテストモード）
         const isTestMode = process.env['CLAUDE_PALETTE_TEST_MODE'] !== 'false';
-        
+
         let childProcess: ChildProcess;
-        
+
         if (isTestMode) {
           // テストモード: echoコマンドで動作確認
           const fullCommand = `echo "実行されたコマンド: ${command} | 入力: ${input}"`;
@@ -436,7 +440,7 @@ class ClaudePalette {
           // claude -p "/command input text" の形式で実行
           const fullCommand = `${command} ${input}`;
           const claudeArgs = ['-p', fullCommand];
-          
+
           childProcess = spawn('claude', claudeArgs, {
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: process.cwd()
@@ -456,10 +460,17 @@ class ClaudePalette {
 
         childProcess.on('close', (code: number | null) => {
           if (code === 0) {
-            resolve({ 
-              success: true, 
-              output: output || `${command}コマンドが正常に実行されました。\n入力: ${input}` 
-            });
+            if (isTestMode) {
+              resolve({ 
+                success: true, 
+                output: output || `【テストモード】実際のコマンドは実行されていません。\n実行されたコマンド: ${command}\n入力: ${input}` 
+              });
+            } else {
+              resolve({ 
+                success: true, 
+                output: output || `${command}コマンドが正常に実行されました。\n入力: ${input}` 
+              });
+            }
           } else {
             resolve({ 
               success: false, 

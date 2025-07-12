@@ -45,6 +45,9 @@ class ClaudePaletteRenderer {
     private executeBtn: HTMLButtonElement;
     private closeBtn: HTMLButtonElement;
     private status: HTMLElement;
+    private resultArea: HTMLElement;
+    private resultContent: HTMLElement;
+    private clearResultBtn: HTMLButtonElement;
     private availableCommands: SlashCommand[] = [];
 
     constructor() {
@@ -54,7 +57,10 @@ class ClaudePaletteRenderer {
         this.executeBtn = this.getElementByIdStrict<HTMLButtonElement>('execute-btn');
         this.closeBtn = this.getElementByIdStrict<HTMLButtonElement>('close-btn');
         this.status = this.getElementByIdStrict<HTMLElement>('status');
-        
+        this.resultArea = this.getElementByIdStrict<HTMLElement>('result-area');
+        this.resultContent = this.getElementByIdStrict<HTMLElement>('result-content');
+        this.clearResultBtn = this.getElementByIdStrict<HTMLButtonElement>('clear-result');
+
         this.initialize();
     }
 
@@ -102,7 +108,7 @@ class ClaudePaletteRenderer {
     private populateCommands(): void {
         // 既存のオプションをクリア
         this.commandSelect.innerHTML = '';
-        
+
         // デフォルトオプションを追加
         const defaultOption = document.createElement('option');
         defaultOption.value = '';
@@ -155,6 +161,11 @@ class ClaudePaletteRenderer {
             this.closeWindow();
         });
 
+        // 結果クリアボタン
+        this.clearResultBtn.addEventListener('click', () => {
+            this.hideResultArea();
+        });
+
         // ESCキーで閉じる
         document.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -169,7 +180,7 @@ class ClaudePaletteRenderer {
     private updateExecuteButton(): void {
         const hasCommand = this.commandSelect.value.trim() !== '';
         const hasInput = this.inputText.value.trim() !== '';
-        
+
         this.executeBtn.disabled = !hasCommand || !hasInput;
     }
 
@@ -197,21 +208,38 @@ class ClaudePaletteRenderer {
         try {
             this.executeBtn.disabled = true;
             this.showStatus('loading', 'コマンドを実行中...');
+            this.hideResultArea();
 
             const result: CommandResult = await ipcRenderer.invoke('execute-claude-command', command, input);
 
             if (result.success) {
-                this.showStatus('success', 'コマンドが正常に実行されました。');
-                // 少し待ってからウィンドウを閉じる
-                setTimeout(() => {
-                    this.closeWindow();
-                }, 1500);
+                // テストモードかどうかを確認
+                const isTestMode = result.output && result.output.includes('【テストモード】');
+
+                if (isTestMode) {
+                    this.showStatus('success', 'テストモード: コマンドはシミュレートされました');
+                } else {
+                    this.showStatus('success', 'コマンドが正常に実行されました。');
+                }
+
+                // 実行結果を表示
+                if (result.output) {
+                    this.showResultArea(result.output, false);
+                }
+
+                // ウィンドウを閉じない（結果を確認できるようにする）
             } else {
                 this.showStatus('error', `エラー: ${result.error ?? 'Unknown error'}`);
+
+                // エラーメッセージを表示
+                if (result.error) {
+                    this.showResultArea(result.error, true);
+                }
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.showStatus('error', `実行エラー: ${errorMessage}`);
+            this.showResultArea(errorMessage, true);
         } finally {
             this.executeBtn.disabled = false;
             this.updateExecuteButton();
@@ -226,13 +254,13 @@ class ClaudePaletteRenderer {
      */
     private showStatus(type: StatusType, message: string): void {
         this.status.className = `status ${type}`;
-        
+
         if (type === 'loading') {
             this.status.innerHTML = `<span class="loader"></span>${message}`;
         } else {
             this.status.textContent = message;
         }
-        
+
         this.status.style.display = 'block';
 
         // エラーや成功メッセージは自動で消える
@@ -251,16 +279,37 @@ class ClaudePaletteRenderer {
     }
 
     /**
+     * 結果エリアを表示
+     * 
+     * @param content - 表示する内容
+     * @param isError - エラーかどうか
+     */
+    private showResultArea(content: string, isError: boolean = false): void {
+        this.resultContent.textContent = content;
+        this.resultContent.className = `result-content ${isError ? 'error' : 'success'}`;
+        this.resultArea.classList.add('visible');
+    }
+
+    /**
+     * 結果エリアを非表示
+     */
+    private hideResultArea(): void {
+        this.resultArea.classList.remove('visible');
+        this.resultContent.textContent = '';
+    }
+
+    /**
      * フォームをリセット
      */
     public async resetForm(): Promise<void> {
         // コマンドを再読み込み（キャッシュが期限切れの場合に更新される）
         await this.loadCommands();
         this.populateCommands();
-        
+
         this.commandSelect.value = '';
         this.inputText.value = '';
         this.status.style.display = 'none';
+        this.hideResultArea();
         this.updateExecuteButton();
         this.focusInput();
     }
